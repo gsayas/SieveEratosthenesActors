@@ -32,6 +32,7 @@ public final class SieveActor extends Sieve {
     @Override
     public int countPrimes(final int limit) {
 
+        boolean divide = false;
         this.limit = limit;
 
         if(limit <= 2)
@@ -39,19 +40,43 @@ public final class SieveActor extends Sieve {
 
         numPrimes = 1;
         initializeCandidates();
+        if(candidates.length>1) {
+            divide = true;
+        }
 
-        SieveActorActor sieveActor = new SieveActorActor();
+        SieveActorActor sieveActorOne = new SieveActorActor();
         finish(() -> {
-            sieveActor.send(candidates);
+            if(candidates.length>1) {
+                sieveActorOne.send(Arrays.copyOfRange(candidates, 0, getHalf()));
+            }else{
+                sieveActorOne.send(candidates);
+            }
         });
 
-        SieveActorActor loopActor = sieveActor;
+        SieveActorActor loopActor = sieveActorOne;
         while(loopActor != null){
             numPrimes++;
             loopActor = loopActor.nextActor;
         }
 
+        if(divide) {
+            SieveActorActor sieveActorTwo = new SieveActorActor();
+            finish(() -> {
+                sieveActorOne.send(Arrays.copyOfRange(candidates, getHalf() + 1, candidates.length));
+            });
+
+            loopActor = sieveActorTwo;
+            while (loopActor != null) {
+                numPrimes++;
+                loopActor = loopActor.nextActor;
+            }
+        }
+
         return numPrimes;
+    }
+
+    private int getHalf(){
+        return candidates.length%2 == 0 ? (candidates.length/2)-1: ((int)floor(candidates.length/2));
     }
 
     private void initializeCandidates(){
