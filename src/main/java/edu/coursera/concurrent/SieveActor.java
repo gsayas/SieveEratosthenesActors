@@ -1,13 +1,7 @@
 package edu.coursera.concurrent;
 
 import edu.rice.pcdp.Actor;
-
-import java.util.Arrays;
-import java.util.List;
-
 import static edu.rice.pcdp.PCDP.finish;
-import static java.lang.Math.ceil;
-import static java.lang.Math.floor;
 
 /**
  * An actor-based implementation of the Sieve of Eratosthenes.
@@ -25,74 +19,30 @@ public final class SieveActor extends Sieve {
      * prime number.
      */
 
-    private int numPrimes = 0;
-    private int[] candidates; //odd numbers greater than 2
-    private int limit;
 
     @Override
     public int countPrimes(final int limit) {
 
-        boolean divide = false;
-        this.limit = limit;
-
-        if(limit <= 2)
-            return trivialCases();
-
-        numPrimes = 1;
-        initializeCandidates();
-        if(candidates.length>1) {
-            divide = true;
+        if(limit==1){
+            return 0;
         }
 
-        SieveActorActor sieveActorOne = new SieveActorActor();
+        final SieveActorActor sieveActor = new SieveActorActor(2);
         finish(() -> {
-            if(candidates.length>1) {
-                sieveActorOne.send(Arrays.copyOfRange(candidates, 0, getHalf()));
-            }else{
-                sieveActorOne.send(candidates);
+            for (int i = 3; i <= limit ; i += 2) {
+                sieveActor.send(i);
             }
+            sieveActor.send(0);
         });
 
-        SieveActorActor loopActor = sieveActorOne;
-        while(loopActor != null){
-            numPrimes++;
+        int numPrimes = 0;
+        SieveActorActor loopActor = sieveActor;
+        while (loopActor != null){
+            numPrimes += loopActor.getNumLocalPrimes();
             loopActor = loopActor.nextActor;
         }
 
-        if(divide) {
-            SieveActorActor sieveActorTwo = new SieveActorActor();
-            finish(() -> {
-                sieveActorOne.send(Arrays.copyOfRange(candidates, getHalf() + 1, candidates.length));
-            });
-
-            loopActor = sieveActorTwo;
-            while (loopActor != null) {
-                numPrimes++;
-                loopActor = loopActor.nextActor;
-            }
-        }
-
         return numPrimes;
-    }
-
-    private int getHalf(){
-        return candidates.length%2 == 0 ? (candidates.length/2)-1: ((int)floor(candidates.length/2));
-    }
-
-    private void initializeCandidates(){
-        int candidatesSize = (int)floor(limit/2);
-        candidates = new int[candidatesSize];
-        int i = 0;
-
-        for(int oddIndex = 3; i<=candidatesSize-1 && oddIndex<=limit; oddIndex+=2){
-            candidates[i] = oddIndex;
-            //System.out.print(candidates[i] + ", ");
-            i++;
-        }
-    }
-
-    private int trivialCases() {
-        return limit < 2 ? 0 : 1;
     }
 
     /**
@@ -107,16 +57,52 @@ public final class SieveActor extends Sieve {
          *
          * @param msg Received message
          */
+        private static final int MAX_LOCAL_PRIMES = 800;
+        private final int localPrimes[];
+        private int numLocalPrimes;
         private SieveActorActor nextActor;
+
+        SieveActorActor(final int localPrime) {
+            this.localPrimes = new int[MAX_LOCAL_PRIMES];
+            this.localPrimes[0] = localPrime;
+            this.numLocalPrimes = 1;
+            this.nextActor = null;
+        }
+
+        public int getNumLocalPrimes() {
+            return numLocalPrimes;
+        }
 
         @Override
         public void process(final Object msg) {
-            int[] candidates = (int[]) msg;
-            int[] nextCandidates = Arrays.stream(candidates).parallel().filter(i -> i%candidates[0] != 0).toArray();
+            final int candidate = (Integer) msg;
+            if(candidate > 0) {
+                final boolean locallyPrime = isLocallyPrime(candidate);
+                if(locallyPrime) {
+                    if (numLocalPrimes < MAX_LOCAL_PRIMES) {
+                        localPrimes[numLocalPrimes] = candidate;
+                        numLocalPrimes += 1;
+                    } else {
+                        if (nextActor == null) {
+                            nextActor = new SieveActorActor(candidate);
+                        }
+                        nextActor.send(msg);
+                    }
+                }
+            }
+        }
+        
+        private boolean isLocallyPrime(final int candidate) {
+            final boolean[] isPrime = {true};
+            checkPrimeKernel(candidate, isPrime, 0, numLocalPrimes);
+            return isPrime[0];
+        }
 
-            if(nextCandidates.length > 0){
-                nextActor = new SieveActorActor();
-                nextActor.send(nextCandidates);
+        private void checkPrimeKernel(int candidate, boolean[] isPrime, int startIndex, int endIndex) {
+            for (int j = startIndex; j < endIndex; j++) {
+                if (candidate % localPrimes[j] == 0) {
+                    isPrime[0] = false;
+                }
             }
         }
     }
